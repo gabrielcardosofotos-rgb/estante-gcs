@@ -1,6 +1,6 @@
 {
-  "name": "Estante",
-  "short_name": "Estante",
+  "name": "Estante Livros",
+  "short_name": "Livros",
   "description": "Sua biblioteca pessoal de epubs",
   "start_url": "./index.html",
   "scope": "./",
