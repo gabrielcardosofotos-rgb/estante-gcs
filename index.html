@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Estante</title>
+<meta name="theme-color" content="#1b140f">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Estante">
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+<style>
+  :root{
+    --bg: #1b140f;
+    --ember: #c97a3d;
+    --ember-soft: #e0a96d;
+    --paper-dim: #a89a85;
+    --serif: 'Iowan Old Style', 'Palatino Linotype', Georgia, 'Times New Roman', serif;
+    --display: Georgia, 'Times New Roman', serif;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color: transparent;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    background: radial-gradient(120% 140% at 50% -10%, #2a2014 0%, #1b140f 55%, #120d09 100%);
+    color: #f3ecdf;
+    font-family: var(--serif);
+    overflow:hidden;
+    position:fixed;
+    inset:0;
+  }
+  #app{height:100%; width:100%; position:relative;}
+  body.reading .fab{ display:none; }
+
+  /* ---------- LIBRARY ---------- */
+  #library{
+    height:100%;
+    overflow-y:auto;
+    -webkit-overflow-scrolling:touch;
+    padding: calc(env(safe-area-inset-top) + 22px) 18px 100px;
+  }
+  .lib-header{
+    display:flex; align-items:baseline; justify-content:space-between;
+    margin-bottom:22px; padding: 0 4px;
+  }
+  .lib-title{
+    font-family: var(--display);
+    font-size:28px;
+    letter-spacing:0.5px;
+    font-weight:400;
+    color:#f3ecdf;
+  }
+  .lib-title em{ color:var(--ember-soft); font-style:normal; }
+  .lib-count{ font-size:12px; color:var(--paper-dim); letter-spacing:1px; text-transform:uppercase; }
+
+  .grid{
+    display:grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px 16px;
+  }
+  .book-cell{ display:flex; flex-direction:column; }
+  .book{
+    position:relative;
+    aspect-ratio: 2/3;
+    border-radius: 4px;
+    background: linear-gradient(160deg, #3a2c1d, #20170f);
+    box-shadow: 0 10px 18px rgba(0,0,0,0.4), inset 0 0 0 1px rgba(255,255,255,0.04);
+    overflow:hidden;
+    cursor:pointer;
+    transition: transform .15s ease;
+  }
+  .book:active{ transform: scale(0.96); }
+  .book img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .book .fallback{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    padding:14px; text-align:center; font-size:12px; line-height:1.4; color:var(--ember-soft);
+    background: repeating-linear-gradient(135deg, #2c2118, #2c2118 10px, #261c13 10px, #261c13 20px);
+  }
+  .book .spine-edge{
+    position:absolute; left:0; top:0; bottom:0; width:6px;
+    background: linear-gradient(90deg, rgba(0,0,0,0.5), rgba(0,0,0,0));
+  }
+  .book .done-badge{
+    position:absolute; top:6px; right:-22px;
+    background: var(--ember); color:#1b140f;
+    font-size:9px; font-weight:700; letter-spacing:1px;
+    padding:3px 24px; transform: rotate(40deg);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  }
+  .book-meta{
+    margin-top:6px; text-align:center; font-size:11px; letter-spacing:0.5px;
+    color: var(--paper-dim);
+  }
+  .book-meta.is-done{ color: var(--ember-soft); font-weight:600; }
+
+  .empty-state{
+    margin-top: 30vh;
+    text-align:center;
+    color: var(--paper-dim);
+    padding: 0 30px;
+  }
+  .empty-state .glyph{ font-size:34px; margin-bottom:10px; color: var(--ember-soft); }
+  .empty-state p{ font-size:14px; line-height:1.6; }
+
+  .fab{
+    position:fixed; right:20px; bottom: calc(env(safe-area-inset-bottom) + 22px);
+    width:56px; height:56px; border-radius:50%;
+    background: linear-gradient(160deg, var(--ember-soft), var(--ember));
+    display:flex; align-items:center; justify-content:center;
+    box-shadow: 0 10px 24px rgba(201,122,61,0.45);
+    border:none; color:#1b140f; font-size:28px; font-weight:300;
+    z-index:20;
+  }
+  .fab:active{ transform: scale(0.92); }
+  #fileInput{ display:none; }
+
+  /* ---------- READER ---------- */
+  #reader{
+    position:fixed; inset:0; background:#fff;
+    display:none; flex-direction:column;
+  }
+  #reader.open{ display:flex; }
+
+  .reader-bar{
+    position:relative; z-index:5;
+    display:flex; align-items:center; justify-content:space-between;
+    padding: calc(env(safe-area-inset-top) + 10px) 14px 10px;
+    background: inherit;
+    border-bottom: 1px solid rgba(0,0,0,0.06);
+  }
+  .reader-bar button{
+    background:none; border:none; font-size:15px; color:#6b5a44;
+    font-family: var(--serif); padding:6px 8px;
+  }
+  .reader-bar .page-label{
+    font-size:12px; letter-spacing:0.5px; color:#9c8b73;
+  }
+
+  .page-stage{
+    flex:1; position:relative; overflow:hidden;
+    perspective: 1800px;
+  }
+  .leaf{
+    position:absolute; inset:0;
+    background: inherit;
+  }
+  .leaf.next-leaf{ z-index:1; }
+  .leaf.current-leaf{
+    z-index:2;
+    transform-origin: left center;
+    transform-style: preserve-3d;
+    backface-visibility: hidden;
+  }
+  .leaf.flipping{ box-shadow: -10px 0 30px rgba(0,0,0,0.25); }
+
+  .page-inner{
+    height:100%; width:100%;
+    box-sizing: border-box;
+    overflow:hidden;
+    padding: 22px 26px 30px;
+    font-size: 18px;
+    line-height: 1.75;
+  }
+  .page-inner p{ margin: 0 0 1em; text-indent: 1.4em; }
+  .page-inner h1, .page-inner h2, .page-inner h3{
+    font-family: var(--display); font-weight:400; text-indent:0; margin: 0.6em 0 0.5em;
+  }
+  .page-inner img{ max-width:100%; max-height:100%; height:auto; display:block; margin:auto; object-fit:contain; }
+
+  .tap-zones{ position:absolute; inset:0; display:flex; z-index:3; }
+  .tap-zones .z{ flex:1; }
+  .tap-zones .mid{ flex:1.3; }
+
+  .loading-reader{
+    position:fixed; inset:0; background:rgba(27,20,15,0.92); z-index:50;
+    display:none; align-items:center; justify-content:center; flex-direction:column; color:#cbbfa9;
+  }
+  .loading-reader.show{ display:flex; }
+  .spinner{
+    width:28px; height:28px; border-radius:50%;
+    border: 2px solid rgba(224,169,109,0.25); border-top-color: var(--ember-soft);
+    animation: spin 0.8s linear infinite; margin-bottom:14px;
+  }
+  @keyframes spin{ to{ transform: rotate(360deg); } }
+
+  /* off-screen measuring element, used to compute real pagination */
+  #measure{
+    position:fixed; left:-9999px; top:0;
+    box-sizing:border-box;
+    padding: 22px 26px 30px;
+    overflow:hidden;
+    line-height:1.75;
+  }
+  #measure p{ margin: 0 0 1em; text-indent: 1.4em; }
+  #measure h1, #measure h2, #measure h3{ font-family: var(--display); font-weight:400; text-indent:0; margin: 0.6em 0 0.5em; }
+  #measure img{ max-width:100%; max-height:100%; height:auto; display:block; margin:auto; }
+
+  /* ---------- SETTINGS SHEET ---------- */
+  .sheet-backdrop{
+    position:fixed; inset:0; background: rgba(0,0,0,0.4); z-index:30;
+    opacity:0; pointer-events:none; transition: opacity .2s ease;
+  }
+  .sheet-backdrop.open{ opacity:1; pointer-events:auto; }
+  .sheet{
+    position:fixed; left:0; right:0; bottom:0; z-index:31;
+    background:#fff; color:#2b2117;
+    border-radius: 18px 18px 0 0;
+    padding: 14px 20px calc(env(safe-area-inset-bottom) + 24px);
+    transform: translateY(100%);
+    transition: transform .25s ease;
+    box-shadow: 0 -10px 40px rgba(0,0,0,0.35);
+  }
+  .sheet.open{ transform: translateY(0); }
+  .sheet-handle{ width:36px; height:4px; background:#ddd0b8; border-radius:2px; margin: 4px auto 18px; }
+  .sheet-row{ margin-bottom:20px; }
+  .sheet-row label{
+    display:block; font-size:11px; letter-spacing:1.5px; text-transform:uppercase;
+    color:#9c8b73; margin-bottom:10px;
+  }
+  .font-controls{ display:flex; align-items:center; gap:14px; }
+  .font-controls button{
+    width:40px; height:40px; border-radius:50%; border:1px solid #e7ddc9; background:#fff;
+    font-family: var(--serif); font-size:16px; color:#2b2117;
+  }
+  .font-controls .fsize{ font-size:13px; color:#6b5a44; width:30px; text-align:center; }
+  .theme-options, .font-options{ display:flex; gap:10px; }
+  .theme-swatch{
+    width:42px; height:42px; border-radius:50%; border:2px solid transparent; cursor:pointer;
+  }
+  .theme-swatch.active{ border-color: var(--ember); }
+  .ts-branco{ background:#ffffff; box-shadow: inset 0 0 0 1px #ddd0b8; }
+  .ts-cinza{ background:#9e9e9e; box-shadow: inset 0 0 0 1px #888; }
+  .ts-preto{ background:#000000; box-shadow: inset 0 0 0 1px #444; }
+  .font-pill{
+    padding:9px 14px; border-radius:20px; border:1px solid #e7ddc9; background:#fff;
+    font-size:13px; color:#2b2117;
+  }
+  .font-pill.active{ background: var(--ember); color:#fff; border-color: var(--ember); }
+  .danger-link{ font-size:13px; color:#b5573a; text-align:center; margin-top:6px; }
+
+  .loading{
+    position:fixed; inset:0; background:rgba(27,20,15,0.92); z-index:40;
+    display:none; align-items:center; justify-content:center; flex-direction:column; color:var(--paper-dim);
+  }
+  .loading.show{ display:flex; }
+
+  ::selection{ background: rgba(201,122,61,0.25); }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="library">
+    <div class="lib-header">
+      <div class="lib-title">Sua <em>estante</em></div>
+      <div class="lib-count" id="libCount">0 livros</div>
+    </div>
+    <div class="grid" id="grid"></div>
+    <div class="empty-state" id="emptyState">
+      <div class="glyph">⌂</div>
+      <p>Sua estante está vazia.<br>Toque no + para adicionar um epub.</p>
+    </div>
+  </div>
+
+  <button class="fab" id="addBtn">+</button>
+  <input type="file" id="fileInput" accept=".epub" multiple>
+
+  <div id="reader">
+    <div class="reader-bar">
+      <button id="closeReader">‹ Estante</button>
+      <div class="page-label" id="pageLabel"></div>
+      <button id="openSettings">Aa</button>
+    </div>
+    <div class="page-stage" id="pageStage">
+      <div class="leaf next-leaf" id="leafNext"><div class="page-inner" id="pageInnerNext"></div></div>
+      <div class="leaf current-leaf" id="leafCurrent"><div class="page-inner" id="pageInnerCurrent"></div></div>
+      <div class="tap-zones">
+        <div class="z" id="zonePrev"></div>
+        <div class="mid" id="zoneMid"></div>
+        <div class="z" id="zoneNext"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="measure"></div>
+
+  <div class="loading-reader" id="loadingReader"><div class="spinner"></div><div>Paginando…</div></div>
+
+  <div class="sheet-backdrop" id="sheetBackdrop"></div>
+  <div class="sheet" id="settingsSheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-row">
+      <label>Tamanho da fonte</label>
+      <div class="font-controls">
+        <button id="fontMinus">A−</button>
+        <div class="fsize" id="fontSizeLabel">18</div>
+        <button id="fontPlus">A+</button>
+      </div>
+    </div>
+    <div class="sheet-row">
+      <label>Tipo de letra</label>
+      <div class="font-options">
+        <button class="font-pill active" data-font="serif">Serifa</button>
+        <button class="font-pill" data-font="sans">Sem serifa</button>
+      </div>
+    </div>
+    <div class="sheet-row">
+      <label>Cor da página</label>
+      <div class="theme-options">
+        <div class="theme-swatch ts-branco active" data-theme="branco"></div>
+        <div class="theme-swatch ts-cinza" data-theme="cinza"></div>
+        <div class="theme-swatch ts-preto" data-theme="preto"></div>
+      </div>
+    </div>
+    <div class="sheet-row" style="margin-bottom:6px;">
+      <div class="danger-link" id="removeBook">Remover este livro da estante</div>
+    </div>
+  </div>
+
+  <div class="loading" id="loading"><div class="spinner"></div><div id="loadingText">Importando…</div></div>
+
+</div>
+
+<script>
+/* ====================== STORAGE (IndexedDB) ====================== */
+const DB_NAME = 'estante-db', DB_VERSION = 1, STORE = 'books';
+function openDB(){
+  return new Promise((resolve, reject)=>{
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = (e)=>{
+      const db = e.target.result;
+      if(!db.objectStoreNames.contains(STORE)){
+        db.createObjectStore(STORE, { keyPath: 'id' });
+      }
+    };
+    req.onsuccess = ()=> resolve(req.result);
+    req.onerror = ()=> reject(req.error);
+  });
+}
+async function dbPut(book){
+  const db = await openDB();
+  return new Promise((resolve,reject)=>{
+    const tx = db.transaction(STORE,'readwrite');
+    tx.objectStore(STORE).put(book);
+    tx.oncomplete = ()=>resolve();
+    tx.onerror = ()=>reject(tx.error);
+  });
+}
+async function dbGetAll(){
+  const db = await openDB();
+  return new Promise((resolve,reject)=>{
+    const tx = db.transaction(STORE,'readonly');
+    const req = tx.objectStore(STORE).getAll();
+    req.onsuccess = ()=>resolve(req.result || []);
+    req.onerror = ()=>reject(req.error);
+  });
+}
+async function dbDelete(id){
+  const db = await openDB();
+  return new Promise((resolve,reject)=>{
+    const tx = db.transaction(STORE,'readwrite');
+    tx.objectStore(STORE).delete(id);
+    tx.oncomplete = ()=>resolve();
+    tx.onerror = ()=>reject(tx.error);
+  });
+}
+
+/* ====================== EPUB PARSING ====================== */
+async function parseEpub(arrayBuffer){
+  const zip = await JSZip.loadAsync(arrayBuffer);
+
+  const containerXml = await zip.file('META-INF/container.xml').async('string');
+  const containerDoc = new DOMParser().parseFromString(containerXml, 'application/xml');
+  const opfPath = containerDoc.querySelector('rootfile').getAttribute('full-path');
+  const opfDir = opfPath.includes('/') ? opfPath.slice(0, opfPath.lastIndexOf('/')+1) : '';
+
+  const opfText = await zip.file(opfPath).async('string');
+  const opfDoc = new DOMParser().parseFromString(opfText, 'application/xml');
+
+  const manifestItems = {};
+  opfDoc.querySelectorAll('manifest > item').forEach(it=>{
+    manifestItems[it.getAttribute('id')] = {
+      href: it.getAttribute('href'),
+      mediaType: it.getAttribute('media-type')
+    };
+  });
+
+  const spineIds = Array.from(opfDoc.querySelectorAll('spine > itemref')).map(it=>it.getAttribute('idref'));
+
+  let title = 'Sem título';
+  const titleNode = opfDoc.querySelector('metadata title') || opfDoc.getElementsByTagName('dc:title')[0];
+  if(titleNode && titleNode.textContent) title = titleNode.textContent.trim();
+
+  // cover detection
+  let coverHref = null;
+  const coverMeta = opfDoc.querySelector('metadata > meta[name="cover"]');
+  if(coverMeta){
+    const id = coverMeta.getAttribute('content');
+    if(manifestItems[id]) coverHref = manifestItems[id].href;
+  }
+  if(!coverHref){
+    const imgItem = Object.values(manifestItems).find(it => /cover/i.test(it.href) && it.mediaType?.startsWith('image'));
+    if(imgItem) coverHref = imgItem.href;
+  }
+
+  let coverBlobUrl = null;
+  if(coverHref){
+    const fullPath = opfDir + coverHref;
+    const file = zip.file(fullPath);
+    if(file){
+      const blob = await file.async('blob');
+      coverBlobUrl = await blobToDataUrl(blob);
+    }
+  }
+
+  // build chapters HTML
+  const chapters = [];
+  for(const id of spineIds){
+    const item = manifestItems[id];
+    if(!item) continue;
+    const fullPath = opfDir + item.href;
+    const file = zip.file(fullPath);
+    if(!file) continue;
+    let html = await file.async('string');
+
+    const htmlDoc = new DOMParser().parseFromString(html, 'text/html');
+    const imgs = htmlDoc.querySelectorAll('img');
+    for(const img of imgs){
+      const src = img.getAttribute('src');
+      if(!src) continue;
+      const imgPath = resolveRelative(fullPath, src);
+      const imgFile = zip.file(imgPath);
+      if(imgFile){
+        const blob = await imgFile.async('blob');
+        img.setAttribute('src', await blobToDataUrl(blob));
+      }
+    }
+    chapters.push({
+      html: htmlDoc.body ? htmlDoc.body.innerHTML : html
+    });
+  }
+
+  return { title, coverBlobUrl, chapters };
+}
+
+function resolveRelative(basePath, relPath){
+  if(relPath.startsWith('/')) return relPath.slice(1);
+  const baseParts = basePath.split('/'); baseParts.pop();
+  const relParts = relPath.split('/');
+  for(const part of relParts){
+    if(part === '.') continue;
+    else if(part === '..') baseParts.pop();
+    else baseParts.push(part);
+  }
+  return baseParts.join('/');
+}
+
+function blobToDataUrl(blob){
+  return new Promise((resolve)=>{
+    const reader = new FileReader();
+    reader.onload = ()=> resolve(reader.result);
+    reader.readAsDataURL(blob);
+  });
+}
+
+/* ====================== APP STATE ====================== */
+let library = [];
+let currentBook = null;
+let bookPages = [];     // flattened [{chapterIndex, html}]
+let currentIndex = 0;   // index into bookPages
+
+const el = (id)=>document.getElementById(id);
+const grid = el('grid');
+const libCount = el('libCount');
+const emptyState = el('emptyState');
+const loading = el('loading');
+const loadingText = el('loadingText');
+const loadingReader = el('loadingReader');
+
+/* ====================== LIBRARY RENDER ====================== */
+async function loadLibrary(){
+  library = await dbGetAll();
+  renderGrid();
+}
+
+function renderGrid(){
+  grid.innerHTML = '';
+  emptyState.style.display = library.length ? 'none' : 'block';
+  libCount.textContent = library.length + (library.length===1 ? ' livro' : ' livros');
+
+  const sorted = [...library].sort((a,b)=>{
+    const aDone = (a.progressPct||0) >= 100;
+    const bDone = (b.progressPct||0) >= 100;
+    if(aDone !== bDone) return aDone ? 1 : -1;
+    return (b.progressPct||0) - (a.progressPct||0);
+  });
+
+  sorted.forEach(book=>{
+    const cell = document.createElement('div');
+    cell.className = 'book-cell';
+
+    const div = document.createElement('div');
+    div.className = 'book';
+    div.dataset.id = book.id;
+    if(book.coverBlobUrl){
+      const img = document.createElement('img');
+      img.src = book.coverBlobUrl;
+      div.appendChild(img);
+    } else {
+      const fb = document.createElement('div');
+      fb.className = 'fallback';
+      fb.textContent = book.title;
+      div.appendChild(fb);
+    }
+    const edge = document.createElement('div'); edge.className='spine-edge'; div.appendChild(edge);
+
+    const isDone = (book.progressPct||0) >= 100;
+    if(isDone){
+      const badge = document.createElement('div');
+      badge.className = 'done-badge';
+      badge.textContent = 'LIDO';
+      div.appendChild(badge);
+    }
+
+    div.addEventListener('click', ()=> openBook(book.id));
+    cell.appendChild(div);
+
+    const meta = document.createElement('div');
+    meta.className = 'book-meta' + (isDone ? ' is-done' : '');
+    meta.textContent = isDone ? 'Lido' : (book.progressPct||0) + '%';
+    cell.appendChild(meta);
+
+    grid.appendChild(cell);
+  });
+}
+
+/* ====================== IMPORT ====================== */
+el('addBtn').addEventListener('click', ()=> el('fileInput').click());
+el('fileInput').addEventListener('change', async (e)=>{
+  const files = Array.from(e.target.files);
+  if(!files.length) return;
+  loading.classList.add('show');
+  for(const file of files){
+    loadingText.textContent = 'Importando "' + file.name + '"…';
+    try{
+      const buf = await file.arrayBuffer();
+      const parsed = await parseEpub(buf);
+      const book = {
+        id: 'b_' + Date.now() + '_' + Math.random().toString(36).slice(2,8),
+        title: parsed.title,
+        coverBlobUrl: parsed.coverBlobUrl,
+        chapters: parsed.chapters,
+        progress: { chapterIndex: 0, fracInChapter: 0 },
+        progressPct: 0,
+        settings: { fontSize: 18, font: 'serif', theme: 'branco' }
+      };
+      await dbPut(book);
+    }catch(err){
+      console.error(err);
+      alert('Não consegui importar "' + file.name + '". Verifique se é um epub válido.');
+    }
+  }
+  loading.classList.remove('show');
+  el('fileInput').value = '';
+  await loadLibrary();
+});
+
+/* ====================== READER ====================== */
+const readerEl = el('reader');
+const pageStage = el('pageStage');
+const leafCurrent = el('leafCurrent');
+const leafNext = el('leafNext');
+const pageInnerCurrent = el('pageInnerCurrent');
+const pageInnerNext = el('pageInnerNext');
+const pageLabel = el('pageLabel');
+const measure = el('measure');
+
+async function openBook(id){
+  currentBook = library.find(b=>b.id===id);
+  if(!currentBook) return;
+  applySettingsToDOM();
+  document.body.classList.add('reading');
+  readerEl.classList.add('open');
+  await paginateAndRestore();
+}
+
+el('closeReader').addEventListener('click', closeReader);
+function closeReader(){
+  readerEl.classList.remove('open');
+  document.body.classList.remove('reading');
+  renderGrid();
+}
+
+/* ---------- pagination engine ---------- */
+function isWhitespaceNode(n){
+  return n.nodeType === 3 && !n.textContent.trim();
+}
+
+function splitTextNode(node, measureEl){
+  const words = node.textContent.split(/\s+/).filter(Boolean);
+  const tag = node.tagName || 'P';
+  let lo = 1, hi = words.length, fit = 1;
+  measureEl.innerHTML = '';
+  while(lo <= hi){
+    const mid = (lo + hi) >> 1;
+    const test = document.createElement(tag);
+    test.textContent = words.slice(0, mid).join(' ');
+    measureEl.innerHTML = '';
+    measureEl.appendChild(test);
+    if(measureEl.scrollHeight <= measureEl.clientHeight + 1){ fit = mid; lo = mid + 1; }
+    else { hi = mid - 1; }
+  }
+  fit = Math.max(1, fit);
+  measureEl.innerHTML = '';
+  const partA = document.createElement(tag);
+  partA.textContent = words.slice(0, fit).join(' ');
+  const partB = document.createElement(tag);
+  const rest = words.slice(fit).join(' ');
+  partB.textContent = rest;
+  return [partA, rest.length ? partB : null];
+}
+
+function paginateChapterHtml(html, measureEl){
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  const queue = Array.from(tmp.childNodes).filter(n => !isWhitespaceNode(n));
+  const pages = [];
+  measureEl.innerHTML = '';
+
+  let guard = 0;
+  while(queue.length){
+    guard++;
+    if(guard > 20000) break; // safety valve
+    const node = queue.shift();
+    measureEl.appendChild(node);
+    if(measureEl.scrollHeight <= measureEl.clientHeight + 1){
+      continue;
+    }
+    measureEl.removeChild(node);
+    if(measureEl.childNodes.length === 0){
+      if(node.nodeType === 1 && node.children.length === 0 && node.textContent && node.textContent.trim()){
+        const [partA, partB] = splitTextNode(node, measureEl);
+        measureEl.innerHTML = '';
+        measureEl.appendChild(partA);
+        pages.push(measureEl.innerHTML);
+        measureEl.innerHTML = '';
+        if(partB) queue.unshift(partB);
+      } else {
+        measureEl.appendChild(node);
+        pages.push(measureEl.innerHTML);
+        measureEl.innerHTML = '';
+      }
+    } else {
+      pages.push(measureEl.innerHTML);
+      measureEl.innerHTML = '';
+      queue.unshift(node);
+    }
+  }
+  if(measureEl.childNodes.length > 0){
+    pages.push(measureEl.innerHTML);
+    measureEl.innerHTML = '';
+  }
+  if(pages.length === 0) pages.push('<p style="color:#9c8b73;text-align:center;">(vazio)</p>');
+  return pages;
+}
+
+function setupMeasure(){
+  const w = leafCurrent.clientWidth;
+  const h = leafCurrent.clientHeight;
+  measure.style.width = w + 'px';
+  measure.style.height = h + 'px';
+  const s = currentBook.settings;
+  measure.style.fontSize = s.fontSize + 'px';
+  measure.style.fontFamily = s.font === 'sans' ? "'Avenir Next','Segoe UI',sans-serif" : "var(--serif)";
+}
+
+async function paginateAndRestore(){
+  loadingReader.classList.add('show');
+  await new Promise(r=>requestAnimationFrame(r));
+  setupMeasure();
+
+  const flat = [];
+  const chapterStarts = [];
+  for(let c=0; c<currentBook.chapters.length; c++){
+    chapterStarts.push(flat.length);
+    const pages = paginateChapterHtml(currentBook.chapters[c].html, measure);
+    pages.forEach(html => flat.push({ chapterIndex: c, html }));
+  }
+  bookPages = flat;
+
+  const prog = currentBook.progress || { chapterIndex: 0, fracInChapter: 0 };
+  const c = Math.min(prog.chapterIndex || 0, currentBook.chapters.length - 1);
+  const startIdx = chapterStarts[c] ?? 0;
+  const nextStart = (chapterStarts[c+1] ?? bookPages.length);
+  const chapterPageCount = Math.max(1, nextStart - startIdx);
+  const offset = Math.min(chapterPageCount - 1, Math.round((prog.fracInChapter||0) * (chapterPageCount-1)));
+  currentIndex = Math.min(bookPages.length - 1, Math.max(0, startIdx + offset));
+
+  renderCurrentPage();
+  loadingReader.classList.remove('show');
+}
+
+function renderCurrentPage(){
+  if(!bookPages.length) return;
+  pageInnerCurrent.innerHTML = bookPages[currentIndex].html;
+  leafCurrent.style.transform = 'rotateY(0deg)';
+  pageLabel.textContent = 'Página ' + (currentIndex+1) + ' de ' + bookPages.length;
+  el('zonePrev').style.visibility = currentIndex > 0 ? 'visible' : 'hidden';
+  el('zoneNext').style.visibility = currentIndex < bookPages.length - 1 ? 'visible' : 'hidden';
+  saveProgress();
+}
+
+function saveProgress(){
+  if(!currentBook || !bookPages.length) return;
+  const pct = Math.round(((currentIndex+1) / bookPages.length) * 100);
+  currentBook.progressPct = pct;
+
+  const ch = bookPages[currentIndex].chapterIndex;
+  // find chapter bounds
+  let s = currentIndex, e = currentIndex;
+  while(s > 0 && bookPages[s-1].chapterIndex === ch) s--;
+  while(e < bookPages.length-1 && bookPages[e+1].chapterIndex === ch) e++;
+  const chapterPageCount = Math.max(1, e - s + 1);
+  const fracInChapter = chapterPageCount > 1 ? (currentIndex - s) / (chapterPageCount - 1) : 0;
+
+  currentBook.progress = { chapterIndex: ch, fracInChapter };
+  dbPut(currentBook);
+}
+
+/* ---- page navigation with 3D flip ---- */
+let flipping = false;
+function flipPage(direction){ // 1 = next, -1 = prev
+  if(flipping || !currentBook || !bookPages.length) return;
+  const targetIndex = currentIndex + direction;
+  if(targetIndex < 0 || targetIndex >= bookPages.length) return;
+
+  flipping = true;
+  pageInnerNext.innerHTML = bookPages[targetIndex].html;
+
+  leafCurrent.classList.add('flipping');
+  leafCurrent.style.transition = 'transform .42s cubic-bezier(.4,.1,.2,1)';
+  requestAnimationFrame(()=>{
+    const angle = direction === 1 ? -150 : 150;
+    leafCurrent.style.transform = `rotateY(${angle}deg)`;
+  });
+
+  setTimeout(()=>{
+    currentIndex = targetIndex;
+    renderCurrentPage();
+    leafCurrent.style.transition = 'none';
+    leafCurrent.style.transform = 'rotateY(0deg)';
+    leafCurrent.classList.remove('flipping');
+    requestAnimationFrame(()=>{ flipping = false; });
+  }, 280);
+}
+
+el('zoneNext').addEventListener('click', ()=> flipPage(1));
+el('zonePrev').addEventListener('click', ()=> flipPage(-1));
+el('zoneMid').addEventListener('click', ()=> el('openSettings').click());
+
+let touchStartX = null;
+pageStage.addEventListener('touchstart', (e)=>{ touchStartX = e.touches[0].clientX; }, {passive:true});
+pageStage.addEventListener('touchend', (e)=>{
+  if(touchStartX===null) return;
+  const dx = e.changedTouches[0].clientX - touchStartX;
+  if(Math.abs(dx) > 50) flipPage(dx < 0 ? 1 : -1);
+  touchStartX = null;
+}, {passive:true});
+
+let resizeTimer = null;
+window.addEventListener('resize', ()=>{
+  if(!currentBook || !readerEl.classList.contains('open')) return;
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(()=>{ paginateAndRestore(); }, 300);
+});
+
+/* ====================== SETTINGS SHEET ====================== */
+const sheetBackdrop = el('sheetBackdrop');
+const settingsSheet = el('settingsSheet');
+el('openSettings').addEventListener('click', ()=>{
+  sheetBackdrop.classList.add('open');
+  settingsSheet.classList.add('open');
+});
+sheetBackdrop.addEventListener('click', closeSheet);
+function closeSheet(){
+  sheetBackdrop.classList.remove('open');
+  settingsSheet.classList.remove('open');
+}
+
+el('fontMinus').addEventListener('click', ()=> adjustFont(-1));
+el('fontPlus').addEventListener('click', ()=> adjustFont(1));
+function adjustFont(delta){
+  if(!currentBook) return;
+  const s = currentBook.settings;
+  s.fontSize = Math.min(28, Math.max(13, s.fontSize + delta));
+  el('fontSizeLabel').textContent = s.fontSize;
+  applySettingsToDOM();
+  dbPut(currentBook);
+  paginateAndRestore();
+}
+
+document.querySelectorAll('.font-pill').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    if(!currentBook) return;
+    document.querySelectorAll('.font-pill').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    currentBook.settings.font = btn.dataset.font;
+    applySettingsToDOM();
+    dbPut(currentBook);
+    paginateAndRestore();
+  });
+});
+
+document.querySelectorAll('.theme-swatch').forEach(sw=>{
+  sw.addEventListener('click', ()=>{
+    if(!currentBook) return;
+    document.querySelectorAll('.theme-swatch').forEach(s=>s.classList.remove('active'));
+    sw.classList.add('active');
+    currentBook.settings.theme = sw.dataset.theme;
+    applySettingsToDOM();
+    dbPut(currentBook);
+  });
+});
+
+function applySettingsToDOM(){
+  if(!currentBook) return;
+  const s = currentBook.settings;
+  el('fontSizeLabel').textContent = s.fontSize;
+  [pageInnerCurrent, pageInnerNext].forEach(p=>{
+    p.style.fontSize = s.fontSize + 'px';
+    p.style.fontFamily = s.font === 'sans' ? "'Avenir Next', 'Segoe UI', sans-serif" : "var(--serif)";
+  });
+  const themeMap = {
+    branco: { bg:'#ffffff', text:'#1a1a1a' },
+    cinza:  { bg:'#9e9e9e', text:'#161616' },
+    preto:  { bg:'#000000', text:'#e8e8e8' }
+  };
+  const t = themeMap[s.theme] || themeMap.branco;
+  readerEl.style.background = t.bg;
+  leafCurrent.style.background = t.bg;
+  leafNext.style.background = t.bg;
+  [pageInnerCurrent, pageInnerNext].forEach(p=> p.style.color = t.text);
+  document.querySelector('.reader-bar').style.background = t.bg;
+  document.querySelector('.reader-bar').style.color = t.text;
+  document.querySelectorAll('.reader-bar button').forEach(b=> b.style.color = t.text);
+
+  document.querySelectorAll('.font-pill').forEach(b=> b.classList.toggle('active', b.dataset.font === s.font));
+  document.querySelectorAll('.theme-swatch').forEach(sw2=> sw2.classList.toggle('active', sw2.dataset.theme === s.theme));
+}
+
+el('removeBook').addEventListener('click', async ()=>{
+  if(!currentBook) return;
+  if(confirm('Remover "' + currentBook.title + '" da estante?')){
+    await dbDelete(currentBook.id);
+    closeSheet();
+    closeReader();
+    await loadLibrary();
+  }
+});
+
+/* ====================== INIT ====================== */
+loadLibrary();
+
+/* ====================== SERVICE WORKER ====================== */
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>
